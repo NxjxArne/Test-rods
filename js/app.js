@@ -21,6 +21,20 @@ const App = (() => {
     lastFix: null,
     lastHeading: 0,
     speedMps: 0,
+    followMap: true,
+    map: null,
+    mapRoute: null,
+    mapMarker: null,
+    mapStart: null,
+    mapEnd: null,
+    mapReady: false,
+    mapRouteDirty: false,
+    mapMarkerLastPos: null,
+    routeTotalMeters: 0,
+    planMap: null,
+    planMapRoute: null,
+    planMapMarkers: [],
+    planWaypoints: [],
 
     // free-roam specific
     roamAheadMeters: 1500,
@@ -67,6 +81,13 @@ const App = (() => {
       ring: $('#ring-progress'),
       driveModeLabel: $('#drive-mode-label'),
       driveStatus: $('#drive-status'),
+      driveProgress: $('#drive-progress'),
+      mapFollowBtn: $('#btn-map-follow'),
+      upcomingCorners: $('#upcoming-corners'),
+      planMap: $('#plan-map'),
+      planWaypoints: $('#plan-waypoints'),
+      planMapClear: $('#btn-plan-map-clear'),
+      planMapRoute: $('#btn-plan-map-route'),
       unitsToggle: $('#toggle-units'),
       severityToggle: $('#toggle-severity'),
       timingSelect: $('#select-timing'),
@@ -78,6 +99,117 @@ const App = (() => {
   function showScreen(name) {
     Object.values(el.screens).forEach(s => s.classList.remove('active'));
     el.screens[name].classList.add('active');
+  }
+
+  function ensureMap() {
+    if (state.map || typeof L === 'undefined') return;
+
+    state.map = L.map('map', {
+      zoomControl: false,
+      attributionControl: false,
+      scrollWheelZoom: false,
+      dragging: true,
+      tap: false,
+    });
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      noWrap: true,
+    }).addTo(state.map);
+
+    state.mapRoute = L.polyline([], {
+      color: '#f5a623',
+      weight: 6,
+      opacity: 0.95,
+    }).addTo(state.map);
+
+    state.mapMarker = L.circleMarker([0, 0], {
+      radius: 9,
+      color: '#0b0d10',
+      fillColor: '#4fd1e6',
+      fillOpacity: 1,
+      weight: 3,
+    }).addTo(state.map);
+
+    state.mapStart = L.circleMarker([0, 0], {
+      radius: 6,
+      color: '#0b0d10',
+      fillColor: '#3ccb6f',
+      fillOpacity: 1,
+      weight: 3,
+    }).addTo(state.map);
+
+    state.mapEnd = L.circleMarker([0, 0], {
+      radius: 6,
+      color: '#0b0d10',
+      fillColor: '#e5484d',
+      fillOpacity: 1,
+      weight: 3,
+    }).addTo(state.map);
+  }
+
+  function updateMapView(fix = null) {
+    if (!state.map || !state.path.length || typeof L === 'undefined') return;
+
+    if (state.mapRouteDirty || !state.mapRoute.getLatLngs().length) {
+      const coords = state.path.map(p => [p.lat, p.lng]);
+      state.mapRoute.setLatLngs(coords);
+      state.mapRouteDirty = false;
+      if (coords.length) {
+        state.mapStart.setLatLng(coords[0]);
+        state.mapEnd.setLatLng(coords[coords.length - 1]);
+      }
+    }
+
+    if (!state.mapReady) {
+      const bounds = L.latLngBounds(state.path.map(p => [p.lat, p.lng]));
+      if (bounds.isValid()) {
+        state.map.fitBounds(bounds, { padding: [20, 20] });
+        state.mapReady = true;
+      }
+    }
+
+    if (fix) {
+      const markerPoint = [fix.lat, fix.lng];
+      const lastPos = state.mapMarker.getLatLng();
+      const movedEnough = !lastPos || Geo.haversine({ lat: lastPos.lat, lng: lastPos.lng }, fix) > 8;
+      if (movedEnough) state.mapMarker.setLatLng(markerPoint);
+
+      if (state.followMap) {
+        const currentCenter = state.map.getCenter();
+        const centerDist = Geo.haversine({ lat: currentCenter.lat, lng: currentCenter.lng }, fix);
+        if (centerDist > 18) state.map.panTo(markerPoint, { animate: true, duration: 0.2 });
+      }
+    }
+  }
+
+  function updateUpcomingCorners(distAlong) {
+    if (!state.corners || !state.corners.length) {
+      el.upcomingCorners.innerHTML = '<div class="upcoming-item"><span>No corners loaded</span><strong>—</strong></div>';
+      return;
+    }
+
+    const next = state.corners.filter(c => c.distAlong > distAlong).slice(0, 4);
+    if (!next.length) {
+      el.upcomingCorners.innerHTML = '<div class="upcoming-item"><span>Route complete</span><strong>done</strong></div>';
+      return;
+    }
+
+    el.upcomingCorners.innerHTML = next.map(c => {
+      const dir = c.direction === 'left' ? 'L' : 'R';
+      const sev = state.severityMode === 'rally' ? c.rally.code : c.simple.code;
+      const label = state.severityMode === 'rally' ? `${dir} ${sev}` : `${c.simple.label} ${dir}`;
+      return `<div class="upcoming-item"><span>${label}</span><strong>${fmtDist(Math.max(0, c.distAlong - distAlong))}</strong></div>`;
+    }).join('');
+  }
+
+  function refreshDriveProgress(distAlong) {
+    if (!state.routeTotalMeters) {
+      el.driveProgress.textContent = '0%';
+      return;
+    }
+    const pct = Math.max(0, Math.min(100, (distAlong / state.routeTotalMeters) * 100));
+    el.driveProgress.textContent = `${Math.round(pct)}%`;
   }
 
   // ---------- speech ----------
@@ -164,6 +296,90 @@ const App = (() => {
 
   function resetAnnouncements() { state.announced = new Set(); }
 
+  function ensurePlanMap() {
+    if (state.planMap || typeof L === 'undefined') return;
+
+    state.planMap = L.map('plan-map', {
+      zoomControl: false,
+      attributionControl: false,
+      scrollWheelZoom: false,
+      dragging: true,
+      tap: true,
+    });
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      noWrap: true,
+    }).addTo(state.planMap);
+
+    state.planMapRoute = L.polyline([], {
+      color: '#f5a623',
+      weight: 6,
+      opacity: 0.9,
+    }).addTo(state.planMap);
+
+    state.planMap.on('click', e => {
+      const p = { lat: e.latlng.lat, lng: e.latlng.lng };
+      state.planWaypoints.push(p);
+      const marker = L.circleMarker([p.lat, p.lng], {
+        radius: 7,
+        color: '#0b0d10',
+        fillColor: '#4fd1e6',
+        fillOpacity: 1,
+        weight: 3,
+      }).addTo(state.planMap);
+      state.planMapMarkers.push(marker);
+      if (state.planWaypoints.length >= 2) {
+        state.planMapRoute.setLatLngs(state.planWaypoints.map(w => [w.lat, w.lng]));
+        state.planMap.fitBounds(L.latLngBounds(state.planWaypoints.map(w => [w.lat, w.lng])), { padding: [20, 20] });
+      } else if (state.planWaypoints.length === 1) {
+        state.planMap.setView([p.lat, p.lng], 14);
+      }
+      updatePlanWaypointList();
+      if (state.planWaypoints.length > 1) {
+        planStart = state.planWaypoints[0];
+        planDest = state.planWaypoints[state.planWaypoints.length - 1];
+      }
+      el.planStatus.textContent = `${state.planWaypoints.length} checkpoint${state.planWaypoints.length === 1 ? '' : 's'} selected — build route when ready.`;
+    });
+  }
+
+  function updatePlanWaypointList() {
+    if (!el.planWaypoints) return;
+    el.planWaypoints.innerHTML = state.planWaypoints.length
+      ? state.planWaypoints.map((_, idx) => `<span class="waypoint-pill">Stop ${idx + 1}</span>`).join('')
+      : '<span class="waypoint-pill">No stops yet</span>';
+  }
+
+  function clearPlanWaypoints() {
+    state.planWaypoints = [];
+    state.planMapMarkers.forEach(m => m.remove());
+    state.planMapMarkers = [];
+    if (state.planMapRoute) state.planMapRoute.setLatLngs([]);
+    if (state.planMap) state.planMap.setView([50.5, 4.5], 5);
+    updatePlanWaypointList();
+    planStart = null; planDest = null;
+  }
+
+  function buildRouteFromMap() {
+    if (!state.planWaypoints.length) {
+      el.planStatus.textContent = 'Tap the map to add at least two points first.';
+      return;
+    }
+    if (state.planWaypoints.length < 2) {
+      el.planStatus.textContent = 'Add a start and a destination point on the map.';
+      return;
+    }
+    if (!state.planWaypoints[0] || !state.planWaypoints[state.planWaypoints.length - 1]) {
+      el.planStatus.textContent = 'Map waypoints are incomplete.';
+      return;
+    }
+    el.planStatus.textContent = 'Building route from map…';
+    planStart = state.planWaypoints[0];
+    planDest = state.planWaypoints[state.planWaypoints.length - 1];
+    planAndGo();
+  }
+
   function tickDrive(distAlong) {
     // find next un-passed, un-announced corner ahead
     const upcoming = state.corners.filter(c => c.distAlong > distAlong - 5);
@@ -197,6 +413,8 @@ const App = (() => {
         extendRoam();
       }
     }
+
+    updateUpcomingCorners(distAlong);
   }
 
   // ---------- GPS ----------
@@ -226,6 +444,8 @@ const App = (() => {
       return;
     }
     el.driveStatus.textContent = '';
+    refreshDriveProgress(proj.distAlong);
+    updateMapView(fix);
     tickDrive(proj.distAlong);
   }
 
@@ -286,14 +506,21 @@ const App = (() => {
     });
   }
 
+  function getActiveRouteWaypoints() {
+    if (state.planWaypoints.length >= 2) return state.planWaypoints.slice();
+    if (planStart && planDest) return [planStart, planDest];
+    return [];
+  }
+
   async function planAndGo() {
-    if (!planStart || !planDest) {
-      el.planStatus.textContent = 'Pick a start and destination first.';
+    const waypoints = getActiveRouteWaypoints();
+    if (waypoints.length < 2) {
+      el.planStatus.textContent = 'Pick a start and destination, or tap the map to add checkpoints.';
       return;
     }
     el.planStatus.textContent = 'Fetching route…';
     try {
-      const { points } = await RodsAPI.route([planStart, planDest]);
+      const { points } = await RodsAPI.route(waypoints);
       el.planStatus.textContent = 'Analyzing corners…';
       await beginDrive('plan', points);
     } catch (e) {
@@ -343,6 +570,8 @@ const App = (() => {
       }));
       state.path = state.path.concat(points.slice(1));
       state.cum = Geo.cumulativeDistances(state.path);
+      state.mapRouteDirty = true;
+      updateMapView(state.lastFix);
       // keep only future corners from old list + new ones, avoid dup near seam
       state.corners = state.corners.concat(newCorners.filter(c => c.distAlong > offset + 5));
     } catch (e) { /* try again next tick */ }
@@ -353,12 +582,19 @@ const App = (() => {
   function loadPath(points) {
     state.path = points;
     state.cum = Geo.cumulativeDistances(points);
+    state.routeTotalMeters = state.cum[state.cum.length - 1] || 0;
     state.corners = Geo.detectCorners(points);
     resetAnnouncements();
+    state.mapRouteDirty = true;
+    state.mapReady = false;
+    ensureMap();
+    refreshDriveProgress(0);
+    updateMapView();
   }
 
   async function beginDrive(mode, points) {
     state.mode = mode;
+    state.mapReady = false;
     loadPath(points);
     state.driving = true;
     el.driveModeLabel.textContent = mode === 'plan' ? 'Planned route' : 'Free roam';
@@ -392,11 +628,16 @@ const App = (() => {
 
   // ---------- wiring ----------
   function wireEvents() {
-    el.btnPlan.addEventListener('click', () => { showScreen('plan'); });
+    el.btnPlan.addEventListener('click', () => { showScreen('plan'); ensurePlanMap(); });
     el.btnRoam.addEventListener('click', () => { startRoam(); });
     el.btnSettings.addEventListener('click', () => showScreen('settings'));
     el.btnSettingsBack.addEventListener('click', () => showScreen('home'));
     el.planBack.addEventListener('click', () => showScreen('home'));
+
+    ensurePlanMap();
+    updatePlanWaypointList();
+    el.planMapClear.addEventListener('click', clearPlanWaypoints);
+    el.planMapRoute.addEventListener('click', buildRouteFromMap);
 
     wireAutocomplete(el.startInput, el.startResults, r => { planStart = r; });
     wireAutocomplete(el.destInput, el.destResults, r => { planDest = r; });
@@ -415,6 +656,11 @@ const App = (() => {
       state.muted = !state.muted;
       el.driveMute.textContent = state.muted ? '🔇' : '🔊';
       if (state.muted) speechSynthesis.cancel();
+    });
+    el.mapFollowBtn.addEventListener('click', () => {
+      state.followMap = !state.followMap;
+      el.mapFollowBtn.classList.toggle('active', state.followMap);
+      el.mapFollowBtn.textContent = state.followMap ? 'Follow map' : 'Free view';
     });
 
     el.unitsToggle.addEventListener('change', () => { state.units = el.unitsToggle.checked ? 'mi' : 'km'; });

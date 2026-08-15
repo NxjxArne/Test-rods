@@ -8,6 +8,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -67,7 +68,20 @@
           <div id="dest-results" class="result-list"></div>
         </div>
       </div>
-      <button id="btn-plan-go" class="primary-btn">Generate pace notes</button>
+
+      <div class="plan-map-wrap">
+        <div class="plan-map-header">
+          <span>Tap the map to add checkpoints</span>
+          <button id="btn-plan-map-clear" class="ghost-btn small">Clear</button>
+        </div>
+        <div id="plan-map" aria-label="Route map"></div>
+      </div>
+
+      <div id="plan-waypoints" class="waypoint-list"></div>
+      <div class="plan-actions">
+        <button id="btn-plan-map-route" class="secondary-btn">Build route from map</button>
+        <button id="btn-plan-go" class="primary-btn">Generate pace notes</button>
+      </div>
       <div id="plan-status"></div>
     </div>
   </section>
@@ -79,6 +93,18 @@
       <button id="btn-drive-exit" class="icon-btn" aria-label="Exit drive">✕</button>
     </div>
     <div id="drive-status"></div>
+
+    <div class="drive-hud">
+      <div class="drive-progress-wrap">
+        <div class="drive-progress-label">Route progress</div>
+        <div id="drive-progress" class="drive-progress">0%</div>
+      </div>
+      <button id="btn-map-follow" class="map-follow-btn active" aria-label="Toggle map follow mode">Follow map</button>
+    </div>
+
+    <div class="drive-map-wrap">
+      <div id="map" aria-label="Live route map"></div>
+    </div>
 
     <div class="corner-stage">
       <div class="ring-wrap">
@@ -98,6 +124,8 @@
       </div>
     </div>
     <div id="corner-next"></div>
+
+    <div id="upcoming-corners" class="upcoming-corners"></div>
 
     <div class="drive-bottom">
       <div class="speed-readout"><span id="drive-speed" class="val">0</span><span id="drive-speed-unit" class="unit">km/h</span></div>
@@ -157,6 +185,7 @@
 
 </div>
 
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="js/geo.js"></script>
 <script src="js/api.js"></script>
 <script src="js/app.js"></script>

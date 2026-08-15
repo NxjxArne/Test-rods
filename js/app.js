@@ -96,9 +96,21 @@ const App = (() => {
     });
   }
 
+  function refreshLeafletMapSize() {
+    if (state.map) {
+      setTimeout(() => state.map.invalidateSize(), 0);
+      setTimeout(() => state.map.invalidateSize(), 180);
+    }
+    if (state.planMap) {
+      setTimeout(() => state.planMap.invalidateSize(), 0);
+      setTimeout(() => state.planMap.invalidateSize(), 180);
+    }
+  }
+
   function showScreen(name) {
     Object.values(el.screens).forEach(s => s.classList.remove('active'));
     el.screens[name].classList.add('active');
+    requestAnimationFrame(refreshLeafletMapSize);
   }
 
   function ensureMap() {
@@ -122,6 +134,8 @@ const App = (() => {
       weight: 6,
       opacity: 0.95,
     }).addTo(state.map);
+
+    setTimeout(() => state.map.invalidateSize(), 0);
 
     state.mapMarker = L.circleMarker([0, 0], {
       radius: 9,
@@ -317,6 +331,8 @@ const App = (() => {
       weight: 6,
       opacity: 0.9,
     }).addTo(state.planMap);
+
+    setTimeout(() => state.planMap.invalidateSize(), 0);
 
     state.planMap.on('click', e => {
       const p = { lat: e.latlng.lat, lng: e.latlng.lng };
@@ -675,8 +691,12 @@ const App = (() => {
     }
 
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible' && state.driving) requestWakeLock();
+      if (document.visibilityState === 'visible') {
+        if (state.driving) requestWakeLock();
+        refreshLeafletMapSize();
+      }
     });
+    window.addEventListener('resize', refreshLeafletMapSize);
   }
 
   function init() {

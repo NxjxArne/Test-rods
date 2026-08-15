@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#0b0d10">
+<title>Copilot — Corner Callouts</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- HOME -->
+  <section id="screen-home" class="screen active">
+    <div class="topbar">
+      <div class="brand">Co<span class="dot">·</span>Pilot</div>
+      <button id="btn-settings" class="icon-btn" aria-label="Settings">⚙</button>
+    </div>
+
+    <div class="home-hero">
+      <p class="eyebrow">Pocket co-driver</p>
+      <h1>Know the<br>corner before<br>you're in it.</h1>
+      <p>Real-time voiced pace notes for the roads you actually enjoy driving. Plan a route or just start rolling.</p>
+    </div>
+
+    <div class="mode-grid">
+      <button id="btn-mode-plan" class="mode-card plan">
+        <div class="glyph">A→B</div>
+        <div class="copy">
+          <h3>Plan a route</h3>
+          <p>Set a start and destination, get full pace notes generated ahead of time. Works offline once loaded.</p>
+        </div>
+      </button>
+      <button id="btn-mode-roam" class="mode-card roam">
+        <div class="glyph">∿</div>
+        <div class="copy">
+          <h3>Free roam</h3>
+          <p>No destination — just drive. Reads the road ahead live as you go.</p>
+        </div>
+      </button>
+    </div>
+  </section>
+
+  <!-- PLAN -->
+  <section id="screen-plan" class="screen">
+    <div class="topbar">
+      <button id="btn-plan-back" class="icon-btn" aria-label="Back">←</button>
+      <div class="brand" style="font-size:16px;">Plan route</div>
+      <div style="width:44px;"></div>
+    </div>
+    <div class="plan-form">
+      <div>
+        <label class="field-label">Start</label>
+        <div class="field-wrap">
+          <input type="text" id="input-start" placeholder="Search or use current location">
+          <div id="start-results" class="result-list"></div>
+        </div>
+        <button id="btn-use-my-location" class="link-btn">Use my current location</button>
+      </div>
+      <div>
+        <label class="field-label">Destination</label>
+        <div class="field-wrap">
+          <input type="text" id="input-dest" placeholder="Search for a place or address">
+          <div id="dest-results" class="result-list"></div>
+        </div>
+      </div>
+      <button id="btn-plan-go" class="primary-btn">Generate pace notes</button>
+      <div id="plan-status"></div>
+    </div>
+  </section>
+
+  <!-- DRIVE -->
+  <section id="screen-drive" class="screen">
+    <div class="drive-top">
+      <span id="drive-mode-label" class="drive-mode-pill">Mode</span>
+      <button id="btn-drive-exit" class="icon-btn" aria-label="Exit drive">✕</button>
+    </div>
+    <div id="drive-status"></div>
+
+    <div class="drive-map-wrap">
+      <div id="map" aria-label="Live route map"></div>
+    </div>
+
+    <div class="corner-stage">
+      <div class="ring-wrap">
+        <svg class="ring-svg" viewBox="0 0 120 120">
+          <circle class="ring-track" cx="60" cy="60" r="54"></circle>
+          <circle id="ring-progress" class="ring-progress" cx="60" cy="60" r="54"
+                  stroke-dasharray="339.292" stroke-dashoffset="339.292"></circle>
+        </svg>
+        <div id="corner-card" data-sev="0">
+          <svg id="corner-arrow" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M14 44 L14 26 Q14 14 26 14 L44 14" stroke="currentColor" stroke-width="6" stroke-linecap="round" fill="none"/>
+            <path d="M36 6 L46 14 L36 22" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          </svg>
+          <div id="corner-label">Clear road</div>
+          <div id="corner-dist">—</div>
+        </div>
+      </div>
+    </div>
+    <div id="corner-next"></div>
+
+    <div class="drive-bottom">
+      <div class="speed-readout"><span id="drive-speed" class="val">0</span><span id="drive-speed-unit" class="unit">km/h</span></div>
+      <div class="drive-controls">
+        <button id="btn-drive-mute" class="icon-btn" aria-label="Mute">🔊</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section id="screen-settings" class="screen">
+    <div class="topbar">
+      <button id="btn-settings-back" class="icon-btn" aria-label="Back">←</button>
+      <div class="brand" style="font-size:16px;">Settings</div>
+      <div style="width:44px;"></div>
+    </div>
+    <div class="settings-list">
+      <div class="setting-row">
+        <div>
+          <div class="label">Distance units</div>
+          <div class="desc">Kilometers or miles</div>
+        </div>
+        <label class="switch"><input type="checkbox" id="toggle-units"><span class="track"></span></label>
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="label">Rally numeric scale</div>
+          <div class="desc">1–6 severity instead of easy/medium/hard</div>
+        </div>
+        <label class="switch"><input type="checkbox" id="toggle-severity"><span class="track"></span></label>
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="label">Callout timing</div>
+          <div class="desc">When callouts land before a corner</div>
+        </div>
+        <select id="select-timing">
+          <option value="early">Early</option>
+          <option value="standard" selected>Standard</option>
+          <option value="late">Late</option>
+        </select>
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="label">Voice</div>
+          <div class="desc">Used for spoken callouts</div>
+        </div>
+        <select id="select-voice"></select>
+      </div>
+      <div class="setting-row">
+        <div class="label">Test voice</div>
+        <button id="btn-test-voice" class="ghost-btn">Play sample</button>
+      </div>
+    </div>
+    <p class="foot-note">Routing &amp; geocoding via OpenStreetMap / OSRM (public, free services). Position tracking uses your device GPS only — nothing is uploaded once a route is loaded.</p>
+  </section>
+
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="js/geo.js"></script>
+<script src="js/api.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
